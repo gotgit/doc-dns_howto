@@ -1,0 +1,591 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN"   
+	"http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd" [
+<!ENTITY author "<ulink url='mailto:johnson.AT.worldhello.net'>Johnson</ulink>">
+<!ENTITY orgname "<ulink url='http://www.worldhello.net'>worldhello.net</ulink>">
+<!ENTITY % vers   SYSTEM "version.xml">
+%vers;
+]>
+<article id="index">
+<articleinfo>
+<title>DNS 配置示例</title>
+<author><firstname>鑫</firstname><surname>蒋</surname></author>
+<affiliation>
+<orgname>&orgname;</orgname>
+<address><email>johnson.AT.worldhello.net</email></address>
+</affiliation>
+<revhistory>
+<revision>
+<revnumber>1.0</revnumber>
+<date>2003/1/22</date>
+<authorinitials>jiangxin</authorinitials>
+<revremark>转换为 DocBook 格式</revremark>
+</revision>
+<revision>
+<revnumber>0.9</revnumber>
+<date>2000/8</date>
+<authorinitials>jiangxin</authorinitials>
+<revremark>DNS 配置要点</revremark>
+</revision>
+</revhistory>
+<abstract>
+<para>
+DNS 配置示例。
+</para>
+<para>
+（编译自版本: &doc.revision;，最后更新时间: &doc.lastchange;）
+</para>
+</abstract>
+</articleinfo>
+
+<sect1 id="dnssetup"><title>BIND安装</title>
+
+<sect2 id="bind-download"><title>下载</title>
+<para>
+最著名的 DNS(The Internet Domain Name System) 服务器——BIND(The Berkeley Internet Name Domain)。
+</para>
+<para>
+<ulink url="http://www.isc.org">下载 ISC BIND ...</ulink>
+</para>
+<para>
+<ulink url="http://www.nominum.com/content/documents/bind9arm.pdf">下载 Bind 9 Administrator Reference Manual ...</ulink>
+</para>
+</sect2>
+
+<sect2 id="bind-install"><title>安装</title>
+<para>
+安装
+</para>
+<screen>
+$ ./configure --prefix=/usr/local/bind
+$ make depend
+$ make
+$ make install
+</screen>
+
+<para>
+创建链接
+</para>
+<screen>
+$ mkdir -p /usr/local/bind/var/run
+$ mkdir -p /usr/local/bind/var/named
+$ mkdir -p /usr/local/bind/etc
+$ touch    /usr/local/bind/etc/named.conf
+$ touch    /usr/local/bind/etc/rndc.conf
+
+$ ln -sf    /usr/local/bind/etc/named.conf  /etc/named.conf
+$ ln -sf    /usr/local/bind/etc/rndc.conf   /etc/rndc.conf
+$ ln -sf    /usr/local/bind/var/named       /var/named
+$ ln -sf    /usr/local/bind/sbin/rndc       /usr/sbin/rndc
+$ ln -sf    /usr/local/bind/sbin/named      /usr/sbin/named
+</screen>
+</sect2>
+
+<sect2 id="dns-conf"><title>配置 DNS</title>
+
+<sect3 id="bind-config"><title>BIND 的配置</title>
+
+<orderedlist>
+<listitem>
+<para>
+创建密钥
+</para>
+<screen>
+$ cd /usr/local/bind
+$ sbin/dnssec-keygen -a hmac-md5 -b 128 -n HOST worldhello.  <co id="co.bind.keygen"/>
+</screen> 
+
+<calloutlist>
+<callout arearefs="co.bind.keygen">
+<para>
+为 BIND 提供了一种安全机制——TSIG（Transaction SIGnatures ），使用共享密钥进行安全的DNS通知、更新。
+</para>
+<para>
+生成的密钥文件 <filename>K*****.key</filename>, <filename>K*****.private</filename>。其中*.private文件包含的 Key: ******* 即为共享密钥。
+</para>
+</callout>
+</calloutlist>
+</listitem>
+
+<listitem>
+<para>
+创建配置文件：etc/rndc.conf
+</para>
+<para>
+rndc: 远程域名服务控制器（The remote name daemon control:rndc）。是管理员用来控制域名服务器的应用程序，用于动态加载、停止、配置 DNS服务。它需要的配置文件为 <filename>/etc/rndc.conf</filename>：
+</para>
+<screen>
+key worldhello. {                            <co id="co.bind.rndc.key"/>
+     algorithm "hmac-md5";
+     secret "nvNpPbfDZixmFzqSUVJn6w==";
+};
+
+options {
+     default-server localhost;             <co id="co.bind.rndc.server"/>
+     default-key   worldhello. ;
+};
+
+server localhost {
+        key worldhello. ;
+};
+</screen>
+<calloutlist>
+<callout arearefs="co.bind.rndc.key">
+<para>
+共享密钥。用于和受控DNS服务器之间完成认证。
+</para>
+</callout>
+<callout arearefs="co.bind.rndc.server">
+<para>
+管理的DNS主机名称。本例为管理本机。
+</para>
+</callout>
+</calloutlist>
+</listitem>
+
+<listitem>
+<para>
+创建配置文件：etc/named.conf
+</para>
+<para>
+<filename>named.conf</filename> 是域名服务器的主配置文件。zone 是配置文件中的最重要的组成部分，描述了一个授权域名下的域名解析信息。一个复杂的配置例子如下：
+</para>
+<screen>
+key worldhello. {
+     algorithm "hmac-md5";
+     secret "nvNpPbfDZixmFzqSUVJn6w==";                        <co id="co.bind.named.key"/>
+};
+
+controls {
+   inet 127.0.0.1 allow { localhost; } keys { worldhello.; };
+};
+
+acl bogus-nets { 0.0.0.0/8; 1.0.0.0/8; 2.0.0.0/8;};            <co id="co.bind.bogusnet"/>
+
+acl our-inner-nets { 127.0.0.1/32; 10.0.0.0/8; };              <co id="co.bind.innernet"/>
+
+acl our-outer-nets { 192.168.0.0/16; };                        <co id="co.bind.outernet"/>
+
+acl transfer-inner-ips { 10.0.0.2; };                          <co id="co.bind.innertrans"/>
+
+acl transfer-outer-ips { 192.168.0.2; };                       <co id="co.bind.outertrans"/>
+
+options {
+        version "$Id, worldhello.net";
+        directory "/var/named";
+        allow-query { any; };
+        allow-recursion { our-inner-nets; our-outer-nets; };   <co id="co.bind.recursion"/>
+        blackhole { bogus-nets; };
+        notify yes;
+        recursion yes;
+        forward first;
+        forwarders{
+                202.106.0.20;                                  <co id="co.bind.forwarders"/>
+        };
+        listen-on-v6  { none; };
+        auth-nxdomain   no;
+};
+
+view "internal" {                                              <co id="co.bind.interview"/>
+        match-clients { our-inner-nets; };
+        recursion yes;
+<!--
+//        zone "." {
+//                type hint;
+//                file "named.ca";                               <co id="co.bind.zoneca"/>
+//        };
+-->
+        zone "0.0.127.in-addr.arpa"{
+                type master;
+                file "named.local";                            <co id="co.bind.zonelocal"/>
+                notify no;
+        };
+        zone "0.0.10.in-addr.arpa"{
+                type master;
+                file "named.10.0.0";                           <co id="co.bind.zone10"/>
+                notify yes;
+                allow-transfer{ transfer-inner-ips; };
+        };
+        zone "worldhello.net"{
+                type master;
+                file "named.inner.worldhello.net";             <co id="co.bind.zoneworldhello.in"/>
+                allow-query { any; };
+                allow-transfer{ transfer-inner-ips; };
+                notify yes;
+        };
+};
+
+view "external" {                                              <co id="co.bind.outerview"/>
+        match-clients { any; };
+        recursion no;
+<!--
+        zone "." {
+                type hint;
+                file "named.ca";
+        };
+-->
+        zone "0.0.127.in-addr.arpa"{
+                type master;
+                file "named.local";
+                notify no;
+        };
+        zone "0.0.10.in-addr.arpa"{
+                type master;
+                file "named.10.0.0";
+                notify yes;
+                allow-transfer{ transfer-inner-ips; };
+        };
+        zone "worldhello.net"{
+                type master;
+                file "named.outer.worldhello.net";             <co id="co.bind.zoneworldhello.out"/>
+                allow-query { any; };
+                allow-transfer{ transfer-outer-ips; };
+                notify yes;
+        };
+};
+</screen>
+<calloutlist>
+<callout arearefs="co.bind.named.key">
+<para>
+共享密钥。只有和改共享密钥匹配的主机，方能管理 DNS 服务器。
+</para>
+</callout>
+<callout arearefs="co.bind.bogusnet">
+<para>
+非法的网络地址。对于非法地址，拒绝提供服务。
+</para>
+</callout>
+<callout arearefs="co.bind.innernet">
+<para>
+内部网络地址范围。
+</para>
+</callout>
+<callout arearefs="co.bind.outernet">
+<para>
+私有的外部网络地址范围。（示例）
+</para>
+</callout>
+<callout arearefs="co.bind.innertrans">
+<para>
+内部的辅DNS服务器地址。用于和辅DNS服务器通讯，同步DNS信息。
+</para>
+</callout>
+<callout arearefs="co.bind.outertrans">
+<para>
+外部的辅DNS服务器地址。用于和辅DNS服务器通讯，同步DNS信息。
+</para>
+</callout>
+<callout arearefs="co.bind.recursion">
+<para>
+对于内网地址，和私有的外网地址，提供DNS的递归查询服务。
+</para>
+</callout>
+<callout arearefs="co.bind.forwarders">
+<para>
+递归查询时，如果本地的 cache 没有命中，则依次对 forwarders 中的主机进行DNS查询。
+</para>
+</callout>
+<callout arearefs="co.bind.interview">
+<para>
+view 提供了根据来访的地址范围，提供不同的服务。该 internal 视图为本地提供解析服务。
+</para>
+</callout>
+<!--callout arearefs="co.bind.zoneca">
+<para>
+</para>
+</callout-->
+<callout arearefs="co.bind.zonelocal">
+<para>
+localhost 的反相解析域
+</para>
+</callout>
+<callout arearefs="co.bind.zone10">
+<para>
+10.0.0 网段的反相解析域
+</para>
+</callout>
+<callout arearefs="co.bind.zoneworldhello.in">
+<para>
+worldhello.net 在内部网的域名解析域
+</para>
+</callout>
+<callout arearefs="co.bind.outerview">
+<para>
+outerview 视图为外部提供解析服务。
+</para>
+</callout>
+<callout arearefs="co.bind.zoneworldhello.out">
+<para>
+worldhello.net 在外部网的域名解析域
+</para>
+</callout>
+</calloutlist>
+
+</listitem>
+</orderedlist>
+
+
+</sect3>
+<sect3 id="zoneconfig"><title>DNS区域文件的配置</title>
+
+<itemizedlist>
+<listitem>
+<para>
+/var/named/named.local
+</para>
+<screen>
+$TTL 3600
+@               IN      SOA     localhost.      root.localhost. (
+                        2001030801 ; serial
+                        28800 ; refresh
+                        14400 ; retry
+                        3600000 ; expire
+                        86400 ; default_ttl
+                        )
+@               IN      NS      localhost.
+1               IN      PTR     localhost.
+; End of File
+</screen>
+</listitem>
+<listitem>
+<para>
+/var/named/named.10.0.0
+</para>
+<screen>
+$TTL 3600
+@               IN      SOA     ns1.worldhello.net.      johnson.worldhello.net. (
+                        2001030801 ; serial
+                        600 ; refresh
+                        600 ; retry
+                        3600000 ; expire
+                        3400 ; default_ttl
+                        )
+@               IN      NS      ns1.worldhello.net.
+@               IN      NS      ns2.worldhello.net.
+1               IN      PTR     ns1.worldhello.net.
+2               IN      PTR     ns2.worldhello.net.
+10		IN      PTR     johnson.worldhello.net.
+; End of File
+</screen>
+</listitem>
+<listitem>
+<para>
+/var/named/named.inner.worldhello.net
+</para>
+<screen>
+$TTL            3600
+@               IN      SOA     ns1.worldhello.net.      johnson.worldhello.net. (
+                        2001021802 ; serial
+                        300 ; refresh
+                        300 ; retry
+                        7200000 ; expire
+                        3600 ; default_ttl
+                        )
+@               IN      NS      ns1.worldhello.net.
+@               IN      NS      ns2.worldhello.net.
+@               IN      MX      5       mail.worldhello.net.
+@               IN      MX      10      mail2.worldhello.net.
+@               IN      A       10.0.0.1
+localhost       IN      A       127.0.0.1
+ns1             IN      A       10.0.0.1
+ns2             IN      A       10.0.0.2
+johnson         IN      A       10.0.0.10
+www             IN      A       10.0.0.1
+mail		IN	A	10.0.0.2
+mail2		IN	A	10.0.0.3
+*		IN      CNAME   johnson
+</screen>
+</listitem>
+<listitem>
+<para>
+/var/named/named.outer.worldhello.net
+</para>
+<screen>
+$TTL            3600
+@               IN      SOA     ns1.worldhello.net.      johnson.worldhello.net. (
+                        2001021802 ; serial
+                        300 ; refresh
+                        300 ; retry
+                        7200000 ; expire
+                        3600 ; default_ttl
+                        )
+@               IN      NS      ns1.worldhello.net.
+@               IN      NS      ns2.worldhello.net.
+@               IN      MX      5       mail.worldhello.net.
+@               IN      MX      10      mail2.worldhello.net.
+@               IN      A       192.169.0.100
+localhost       IN      A       127.0.0.1
+ns1             IN      A       192.168.0.1
+ns2             IN      A       192.168.0.2
+www             IN      A       192.168.0.1
+johnson         IN      A       192.168.0.10
+mail		IN	A	192.168.0.2
+mail2		IN	A	192.168.0.3
+</screen>
+</listitem>
+<!--listitem>
+<para>
+/var/named/named.ca
+</para>
+<para>
+bind默认配置。
+</para>
+</listitem-->
+<listitem>
+<para>
+/var/named/named.192.168.0
+</para>
+<screen>
+$TTL 3600
+@               IN      SOA     ns1.worldhello.net.      johnson.worldhello.net. (
+                        2001030801 ; serial
+                        600 ; refresh
+                        600 ; retry
+                        3600000 ; expire
+                        3400 ; default_ttl
+                        )
+@               IN      NS      ns2.worldhello.net.
+@               IN      NS      ns1.worldhello.net.
+1               IN      PTR     ns1.worldhello.net.
+2               IN      PTR     ns2.worldhello.net.
+10              IN      PTR     johnson.worldhello.net.
+; End of File
+</screen>
+</listitem>
+</itemizedlist>
+
+</sect3>
+</sect2>
+
+<sect2 id="dns-start"><title>启动 DNS</title>
+<para>
+创建启动文件 <filename>/etc/rc.d/inet.d/named</filename>
+</para>
+<screen>
+<![CDATA[
+#!/bin/sh
+#
+# named           This shell script takes care of starting and stopping
+#                 named (BIND DNS server).
+#
+# chkconfig: 345 55 45
+# description: named (BIND) is a Domain Name Server (DNS) \
+# that is used to resolve host names to IP addresses.
+# probe: true
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Check that networking is up.
+[ ${NETWORKING} = "no" ] && exit 0
+
+[ -f /usr/sbin/named ] || exit 0
+
+[ -f /etc/named.conf ] || exit 0
+
+# See how we were called.
+case "$1" in
+  start)
+        # Start daemons.
+        echo -n "Starting named: "
+        daemon named
+        echo
+        touch /var/lock/subsys/named
+        ;;
+  stop)
+        # Stop daemons.
+        echo -n "Shutting down named: "
+        killproc named
+        rm -f /var/lock/subsys/named
+        echo
+        ;;
+  status)
+        /usr/sbin/rndc status
+        exit $?
+        ;;
+  restart)
+        /usr/sbin/rndc restart
+        exit $?
+        ;;
+  reload)
+        /usr/sbin/rndc reload
+        exit $?
+        ;;
+  probe)
+        # named knows how to reload intelligently; we don't want linuxconf
+        # to offer to restart every time
+        /usr/sbin/rndc reload >/dev/null 2>&1 || echo start
+        exit 0
+        ;;
+
+  *)
+        echo "Usage: named {start|stop|status|restart}"
+        exit 1
+esac
+
+exit 0
+]]>
+</screen>
+
+<para>
+创建 symbollink
+</para>
+<screen>
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc0.d/K45named
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc1.d/K45named
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc2.d/K45named
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc3.d/S55named
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc4.d/S55named
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc5.d/S55named
+$ ln -s /etc/rc.d/init.d/named  /etc/rc.d/rc6.d/K45named
+</screen>
+
+<para>
+启动
+</para>
+<screen>
+<![CDATA[
+$ tail -f /var/log/message &
+$ /etc/rc.d/init.d/named start
+]]>
+</screen>
+
+</sect2>
+
+</sect1>
+
+<sect1 id="dnstest"><title>测试</title>
+<sect2 id="dnscheck"><title>检查</title>
+<screen>
+$ sbin/named-checkconf
+$ sbin/named-checkzone 
+</screen>
+
+</sect2>
+<sect2 id="nslookup"><title>nslookup</title>
+<screen>
+<![CDATA[
+$ nslookup - 127.0.0.1
+> set all
+...
+> ns1.worldhello.net.
+...
+> set query=any
+> worldhello.net.
+...
+> set query=ptr
+> 10.0.0.1
+...
+> set class=CHAOS
+> version.bind
+...
+]]>
+</screen>
+
+</sect2>
+</sect1>
+
+</article>
